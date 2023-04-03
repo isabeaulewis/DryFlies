@@ -1,0 +1,131 @@
+---
+title: "Dryfly_Q1"
+author: "Isabeau Lewis"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 1 Analysis: Investigating the influences of sex, population, and cactus species on the viability of _Drosophila mojavensis_ eggs.
+
+For our first question, we set out to determine whether **sex**, **population origin**, or **host cactus species** affected the viability of _D. mojavensis_ eggs. To do so, we will first construct a linear mixed-effects model of the above factors and use AIC criteria to find the most optimal one. We will also use a decision tree as a second method of analyzing these factors. From this, we will determine what influences the viability of _D. mojavensis_, which may have important implications for predicting the capacity of the species to survive under changing environments.
+
+
+## Loading libraries & data
+
+Libraries:
+```{r}
+library(ggplot2)
+library(dplyr)
+library(lme4)
+library(cowplot)
+theme_set(theme_cowplot(12))
+library(MuMIn)
+library(MASS)
+```
+
+Data:
+```{r}
+via_dat <- read.csv("./data/Viability_data.csv")
+```
+
+## Checking the structure of the data
+```{r}
+head(via_dat)
+```
+
+```{r}
+tail(via_dat)
+```
+
+```{r}
+str(via_dat)
+```
+
+```{r}
+names(via_dat)
+```
+
+
+## Transformations for quality of data
+```{r}
+# Removing the blank rows at the end of the dataset
+via_dat <- slice(via_dat, 1:24)
+tail(via_dat)
+```
+
+```{r}
+# Renaming the columns for better formatting
+via_dat <- rename(via_dat, total_male = total.Male,
+       total_female = total.Female,
+       total_flies = TOTAL,
+       total_hatching = Egg.Hatching,
+       viability = Viability....)
+names(via_dat)
+```
+
+```{r}
+# Structuring the columns correctly
+via_dat <- via_dat %>% mutate(
+  Bottle = as.factor(Bottle),
+  Population = as.factor(Population),
+  Cactus = as.factor(Cactus)
+)
+
+str(via_dat)
+```
+
+## Checking the viability data for assumptions of normality
+```{r}
+ggplot(via_dat, aes(x=viability)) +
+  geom_histogram() 
+```
+
+Although not perfect, the data does fit within a mostly normal distribution. So, we don't need to use a generalized linear model with any other distribution parameters.
+
+Next, we want to have sex as a predictor, but this is currently split into two separate categories (total_male and total_female). To include it, this should be restructured as a single column. For this, we'll choose to make a column called ``sex_bias`` measuring the deviation of the proportion of male and female flies from 50:50. If, for instance, viability is higher when the proportion is skewed towards male flies, then that may indicate that viability is influenced by sex.
+
+```{r}
+via_dat <- via_dat %>% mutate(
+  sex_bias = 0.5 - (total_male/total_flies)
+) # Negative value indicates female bias
+head(via_dat)
+```
+
+
+## Constructing the linear model
+
+```{r}
+tail(via_dat)
+full_model <- lm(viability ~ Cactus + sex_bias + Population, data=via_dat) # Excluding bottle because each observation has a unique bottle number, returns an error otherwise
+```
+
+
+## Model selection
+
+For this, we will use backwards selection to determine the best-fit model from all possible predictors.
+
+```{r}
+BackSel <- stepAIC(full_model, direction="backward")
+```
+
+
+According to the AIC criteria, there are no significant differences between models (they're all within ~2 of each other).
+
+
+## ANOVA for significance of each factor
+```{r}
+anova(full_model)
+```
+
+In agreement with the AIC, the only factor that has a significant effect on egg viability is the population of origin.
+
+## QA/QC
+```{r}
+qplot(x=residuals(full_model))
+```
+
+The residuals are fairly normally distributed, meeting assumptions of normality. 
