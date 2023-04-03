@@ -9,129 +9,8 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# Question 1 Analysis: Investigating the influences of sex, population, and cactus species on the viability of _Drosophila mojavensis_ eggs.
 
-For our first question, we set out to determine whether **sex**, **population origin**, or **host cactus species** affected the viability of _D. mojavensis_ eggs. To do so, we will first construct a linear mixed-effects model of the above factors and use AIC criteria to find the most optimal one. We will also use a decision tree as a second method of analyzing these factors. From this, we will determine what influences the viability of _D. mojavensis_, which may have important implications for predicting the capacity of the species to survive under changing environments.
-
-
-## Loading libraries & data
-
-Libraries:
-```{r}
-library(ggplot2)
-library(dplyr)
-library(lme4)
-library(cowplot)
-theme_set(theme_cowplot(12))
-library(MuMIn)
-library(MASS)
-```
-
-Data:
-```{r}
-via_dat <- read.csv("./data/Viability_data.csv")
-```
-
-## Checking the structure of the data
-```{r}
-head(via_dat)
-```
-
-```{r}
-tail(via_dat)
-```
-
-```{r}
-str(via_dat)
-```
-
-```{r}
-names(via_dat)
-```
-
-
-## Transformations for quality of data
-```{r}
-# Removing the blank rows at the end of the dataset
-via_dat <- slice(via_dat, 1:24)
-tail(via_dat)
-```
-
-```{r}
-# Renaming the columns for better formatting
-via_dat <- rename(via_dat, total_male = total.Male,
-       total_female = total.Female,
-       total_flies = TOTAL,
-       total_hatching = Egg.Hatching,
-       viability = Viability....)
-names(via_dat)
-```
-
-```{r}
-# Structuring the columns correctly
-via_dat <- via_dat %>% mutate(
-  Bottle = as.factor(Bottle),
-  Population = as.factor(Population),
-  Cactus = as.factor(Cactus)
-)
-
-str(via_dat)
-```
-
-## Checking the viability data for assumptions of normality
-```{r}
-ggplot(via_dat, aes(x=viability)) +
-  geom_histogram() 
-```
-
-Although not perfect, the data does fit within a mostly normal distribution. So, we don't need to use a generalized linear model with any other distribution parameters.
-
-Next, we want to have sex as a predictor, but this is currently split into two separate categories (total_male and total_female). To include it, this should be restructured as a single column. For this, we'll choose to make a column called ``sex_bias`` measuring the deviation of the proportion of male and female flies from 50:50. If, for instance, viability is higher when the proportion is skewed towards male flies, then that may indicate that viability is influenced by sex.
-
-```{r}
-via_dat <- via_dat %>% mutate(
-  sex_bias = 0.5 - (total_male/total_flies)
-) # Negative value indicates female bias
-head(via_dat)
-```
-
-
-## Constructing the linear model
-
-```{r}
-tail(via_dat)
-full_model <- lm(viability ~ Cactus + sex_bias + Population, data=via_dat) # Excluding bottle because each observation has a unique bottle number, returns an error otherwise
-```
-
-
-## Model selection
-
-For this, we will use backwards selection to determine the best-fit model from all possible predictors.
-
-```{r}
-BackSel <- stepAIC(full_model, direction="backward")
-```
-
-
-According to the AIC criteria, there are no significant differences between models (they're all within ~2 of each other).
-
-
-## ANOVA for significance of each factor
-```{r}
-anova(full_model)
-```
-
-In agreement with the AIC, the only factor that has a significant effect on egg viability is the population of origin.
-
-## QA/QC
-```{r}
-qplot(x=residuals(full_model))
-```
-
-The residuals are fairly normally distributed, meeting assumptions of normality. 
-
-
-# Question 2 Analysis: Investigating differential responses to dessication in four populations of *Drosophila mojavensis* by analyzing changes in cuticular hydrocarbon (CHC) composition.
+# Question 1 Analysis: Investigating differential responses to dessication in four populations of *Drosophila mojavensis* by analyzing changes in cuticular hydrocarbon (CHC) composition.
 
 ## Part 1: PCA
 
@@ -385,80 +264,108 @@ No significant separation of values is observed relative to desiccation exposure
 
 ## Part 2: Decision tree
 
+To determine which cuticular hydrocarbon changes predict dessication, we will create a decision tree. This will allow us to determine which CHCs are involved in the dessication response in _D. mojavensis_.
+
+## Setup
+
+Loading libraries:
+```{r}
+library(dplyr)
+library(pROC)
+library(e1071)
+library(tree)
+library(rpart)
+library(gbm)
+library(randomForest)
+library(ggplot2)
+library(tibble)
+library(ggpubr)
+```
+
+Loading theme:
+```{r}
+library(cowplot)
+theme_set(theme_cowplot(12))
+```
+
 
 ## Loading the data
 ```{r}
-decision_dat<-read.csv("./data/CHC_dat.csv")
+CHC_dat<-read.csv("./data/CHC_dat.csv")
 ```
 
 ## Inspecting the data
 ```{r}
-names(decision_dat)
+names(CHC_dat)
 ```
 
 There are a lot of extra columns in the original data file that need to be removed (everything after "TOTAL")
 
 ```{r}
-decision_dat <- decision_dat[1:37]
-names(decision_dat)
+CHC_dat <- CHC_dat[1:37]
+names(CHC_dat)
+```
+```{r}
+str(CHC_dat)
 ```
 
-
+Sample, pop, sex, cactus, and exposure should all be set to factors, and C.37.br.alkene should be set to numeric:
 ```{r}
-str(decision_dat)
-```
-
-Sample, pop, sex, cactus, and exposure should all be set to factors:
-```{r}
-decision_dat <- decision_dat %>% 
+CHC_dat <- CHC_dat %>% 
   mutate(SAMPLE = as.factor(SAMPLE),
          pop = as.factor(pop),
          sex = as.factor(sex),
          cactus = as.factor(cactus),
-         exposure = as.factor(exposure))
+         exposure = as.factor(exposure),
+         C.37.br.alkene = as.numeric(C.37.br.alkene)) #edit by Sam; CHC content changed from character to numeric
 ```
 
 Checking the updated structure:
 ```{r}
-str(decision_dat) #everything here looks good
+str(CHC_dat) #everything here looks good
 ```
 
 ```{r}
-head(decision_dat)
+head(CHC_dat)
 ```
 
 ```{r}
-tail(decision_dat)
+tail(CHC_dat)
 ```
 
 Seeing if there are NAs:
 
 ```{r}
 # Seeing which columns have missing values
-decision_dat %>%
+CHC_dat %>%
   select_if(function(x) any(is.na(x))) %>%
   names() 
 ```
 
-There are no NAs, so the dataset looks good.
+There was a single missing value, represented by a period, that was coerced into an NA when the column was converted from character to numeric.
 
+Removing row containing NA value:
+
+```{r}
+CHC_dat<-CHC_dat[complete.cases(CHC_dat),]
+```
 
 ## Dimensions of the data frame
 ```{r}
-dim(decision_dat)
+dim(CHC_dat)
 ```
 
-The final dimensions are 116 rows and 37 columns.
+The final dimensions are 115 rows and 37 columns.
 
 
 ## Splitting the data into a training and a test dataset
 ```{r}
-Rows<-c(1:nrow(decision_dat))
+Rows<-c(1:nrow(CHC_dat))
 Train<-Rows %% 2==1
 Validate<-Rows %% 2==0
 
-dat_train<-decision_dat[Train,]
-dat_validate<-decision_dat[Validate,]
+dat_train<-CHC_dat[Train,]
+dat_validate<-CHC_dat[Validate,]
 
 head(dat_train)
 head(dat_validate)
@@ -466,17 +373,6 @@ head(dat_validate)
 
 
 ## Decision tree
-
-### Libraries
-```{r}
-library(pROC)
-library(e1071)
-library(tree)
-library(rpart)
-library(gbm)
-library(randomForest)
-```
-
 
 ### Tree diagram with text
 
@@ -504,7 +400,7 @@ text(DryTree, cex=0.7, adj=0)
 
 
 ### CHC feature most influential for classifying samples
-The protein feature that was most influential for classifying samples was C.32.47 (at the top of the tree).
+The protein feature that was most influential for classifying samples was C.34. (at the top of the tree).
 
 ### Using predict() to provide the confusion matrix
 ```{r}
@@ -519,10 +415,183 @@ table(CatDat)
 ```{r}
 MisClass<-CatDat %>%
   filter(Obs!=Pred)
+```
+
+
+```{r}
 nrow(MisClass)/nrow(CatDat)
 ```
 
-The misclassification error rate was ~55%. This is a high error rate.
+The misclassification error rate was ~60%. This is a high error rate.
 
+## Random Forest
+
+Running randomforest function on training dataset, excluding rows with NA values:
+
+```{r}
+noNA<-complete.cases(dat_train_r)
+dat_train_final<-dat_train_r[noNA,]
+DryFor<-randomForest(exposure ~ ., data=dat_train_final, ntree=100, mtry=3, nodesize=5, importance=TRUE)
+DryFor
+```
+Getting classifications Using predict():
+
+```{r}
+PredFor<-predict(DryFor, dat_validate_r, type="class")
+head(DryFor)
+```
+
+Getting confusion matrix:
+```{r}
+CatDat2<-data.frame(Obs=dat_validate_r$exposure, Pred=predict(DryFor, dat_validate_r, type="class"))
+table(CatDat2)
+```
+
+Getting the misclassification error rate:
+```{r}
+MisClass2<-CatDat2 %>%
+  filter(Obs!=Pred)
+nrow(MisClass2)/nrow(CatDat2)
+```
+
+The misclassification rate has dropped from ~60% to ~42% by using random forests.
+
+### Plotting
+```{r}
+
+dry_imp<-as.data.frame(DryFor$importance)
+dry_imp<-rownames_to_column(dry_imp, "CHC")
+dry_imp<-dry_imp
+
+
+d_imp <- ggplot(data=dry_imp, aes(x=reorder(CHC, MeanDecreaseAccuracy), y=MeanDecreaseAccuracy)) +
+  geom_col() +
+  xlab("CHC") +
+  ylab("Importance")
+ggpar(d_imp, x.text.angle=45)
+```
+
+> The relative importance of different CHC features in response to different levels of dessication
+
+# Question 2 Analysis: Investigating the influences of sex, population, and cactus species on the viability of _Drosophila mojavensis_ eggs.
+
+For this question, we set out to determine whether **sex**, **population origin**, or **host cactus species** affected the viability of _D. mojavensis_ eggs. To do so, we will first construct a linear mixed-effects model of the above factors and use AIC criteria to find the most optimal one. We will also use a decision tree as a second method of analyzing these factors. From this, we will determine what influences the viability of _D. mojavensis_, which may have important implications for predicting the capacity of the species to survive under changing environments.
+
+
+## Loading libraries & data
+
+Libraries:
+```{r}
+library(ggplot2)
+library(dplyr)
+library(lme4)
+library(cowplot)
+theme_set(theme_cowplot(12))
+library(MuMIn)
+library(MASS)
+```
+
+Data:
+```{r}
+via_dat <- read.csv("./data/Viability_data.csv")
+```
+
+## Checking the structure of the data
+```{r}
+head(via_dat)
+```
+
+```{r}
+tail(via_dat)
+```
+
+```{r}
+str(via_dat)
+```
+
+```{r}
+names(via_dat)
+```
+
+
+## Transformations for quality of data
+```{r}
+# Removing the blank rows at the end of the dataset
+via_dat <- slice(via_dat, 1:24)
+tail(via_dat)
+```
+
+```{r}
+# Renaming the columns for better formatting
+via_dat <- rename(via_dat, total_male = total.Male,
+       total_female = total.Female,
+       total_flies = TOTAL,
+       total_hatching = Egg.Hatching,
+       viability = Viability....)
+names(via_dat)
+```
+
+```{r}
+# Structuring the columns correctly
+via_dat <- via_dat %>% mutate(
+  Bottle = as.factor(Bottle),
+  Population = as.factor(Population),
+  Cactus = as.factor(Cactus)
+)
+
+str(via_dat)
+```
+
+## Checking the viability data for assumptions of normality
+```{r}
+ggplot(via_dat, aes(x=viability)) +
+  geom_histogram() 
+```
+
+Although not perfect, the data does fit within a mostly normal distribution. So, we don't need to use a generalized linear model with any other distribution parameters.
+
+Next, we want to have sex as a predictor, but this is currently split into two separate categories (total_male and total_female). To include it, this should be restructured as a single column. For this, we'll choose to make a column called ``sex_bias`` measuring the deviation of the proportion of male and female flies from 50:50. If, for instance, viability is higher when the proportion is skewed towards male flies, then that may indicate that viability is influenced by sex.
+
+```{r}
+via_dat <- via_dat %>% mutate(
+  sex_bias = 0.5 - (total_male/total_flies)
+) # Negative value indicates female bias
+head(via_dat)
+```
+
+
+## Constructing the linear model
+
+```{r}
+tail(via_dat)
+full_model <- lm(viability ~ Cactus + sex_bias + Population, data=via_dat) # Excluding bottle because each observation has a unique bottle number, returns an error otherwise
+```
+
+
+## Model selection
+
+For this, we will use backwards selection to determine the best-fit model from all possible predictors.
+
+```{r}
+BackSel <- stepAIC(full_model, direction="backward")
+```
+
+
+According to the AIC criteria, there are no significant differences between models (they're all within ~2 of each other).
+
+
+## ANOVA for significance of each factor
+```{r}
+anova(full_model)
+```
+
+In agreement with the AIC, the only factor that has a significant effect on egg viability is the population of origin.
+
+## QA/QC
+```{r}
+qplot(x=residuals(full_model))
+```
+
+The residuals are fairly normally distributed, meeting assumptions of normality. 
 
 
