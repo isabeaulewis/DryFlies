@@ -1,0 +1,164 @@
+---
+title: "Q2_DecisionTree"
+author: "Isabeau Lewis"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 2 Analysis: Investigating differential responses to dessication in four populations of _Drosophila mojavensis_ by analyzing changes in cuticular hydrocarbon (CHC) composition.
+
+To determine which cuticular hydrocarbon changes predict dessication, we will create a decision tree. This will allow us to determine which CHCs are involved in the dessication response in _D. mojavensis_.
+
+We will analyze our data by performing a principal component analysis and then plotting the most influential components, relative to the three mentioned variables. This will allow us to conclude whether the selected variables yield differential responses and which variables displayed more significant separation of the CHC content values.
+
+## Setup
+
+Loading libraries:
+```{r}
+library(dplyr)
+library(pROC)
+library(e1071)
+library(tree)
+library(rpart)
+library(gbm)
+library(randomForest)
+library(ggplot2)
+```
+
+Loading theme:
+```{r}
+library(cowplot)
+theme_set(theme_cowplot(12))
+```
+
+
+## Loading the data
+```{r}
+CHC_dat<-read.csv("./data/CHC_dat.csv")
+```
+
+## Inspecting the data
+```{r}
+names(CHC_dat)
+```
+
+There are a lot of extra columns in the original data file that need to be removed (everything after "TOTAL")
+
+```{r}
+CHC_dat <- CHC_dat[1:37]
+names(CHC_dat)
+```
+
+
+```{r}
+str(CHC_dat)
+```
+
+Sample, pop, sex, cactus, and exposure should all be set to factors:
+```{r}
+CHC_dat <- CHC_dat %>% 
+  mutate(SAMPLE = as.factor(SAMPLE),
+         pop = as.factor(pop),
+         sex = as.factor(sex),
+         cactus = as.factor(cactus),
+         exposure = as.factor(exposure))
+```
+
+Checking the updated structure:
+```{r}
+str(CHC_dat) #everything here looks good
+```
+
+```{r}
+head(CHC_dat)
+```
+
+```{r}
+tail(CHC_dat)
+```
+
+Seeing if there are NAs:
+
+```{r}
+# Seeing which columns have missing values
+CHC_dat %>%
+  select_if(function(x) any(is.na(x))) %>%
+  names() 
+```
+
+There are no NAs, so the dataset looks good.
+
+
+## Dimensions of the data frame
+```{r}
+dim(CHC_dat)
+```
+
+The final dimensions are 116 rows and 37 columns.
+
+
+## Splitting the data into a training and a test dataset
+```{r}
+Rows<-c(1:nrow(CHC_dat))
+Train<-Rows %% 2==1
+Validate<-Rows %% 2==0
+
+dat_train<-CHC_dat[Train,]
+dat_validate<-CHC_dat[Validate,]
+
+head(dat_train)
+head(dat_validate)
+```
+
+
+## Decision tree
+
+### Tree diagram with text
+
+Getting only response and predictor variables:
+```{r}
+names(dat_train)
+```
+
+* This has Sample, pop, sex, cactus, and exposure, we want only exposure
+
+```{r}
+# Selecting only response and predictor variables:
+dat_train_r <- dplyr::select(dat_train, -c("SAMPLE":"cactus"))
+head(dat_train_r)
+```
+
+Creating the tree:
+```{r}
+DryTree<-tree(exposure~., data=dat_train_r)
+plot(DryTree)
+text(DryTree, cex=0.7, adj=0)
+```
+
+> A decision tree of the CHC features involved in response to different levels of dessication. Outcomes are printed along the bottom of the tree, coming from 'roots' and nodes listing each CHC feature & its corresponding value for decision-making.
+
+
+### CHC feature most influential for classifying samples
+The protein feature that was most influential for classifying samples was C.32.47 (at the top of the tree).
+
+### Using predict() to provide the confusion matrix
+```{r}
+# Selecting only response and predictor variables:
+dat_validate_r <- dplyr::select(dat_validate, -c("SAMPLE":"cactus"))
+
+CatDat<-data.frame(Obs=dat_validate_r$exposure, Pred=predict(DryTree, dat_validate_r, type="class"))
+table(CatDat)
+```
+
+## 4. Finding the misclassification error rate
+```{r}
+MisClass<-CatDat %>%
+  filter(Obs!=Pred)
+nrow(MisClass)/nrow(CatDat)
+```
+
+The misclassification error rate was ~55%. This is a high error rate.
