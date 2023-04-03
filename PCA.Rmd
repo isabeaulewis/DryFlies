@@ -1,0 +1,305 @@
+---
+title: "Q2 Analysis"
+author: "Darah Vlaminck & Martina Mileva"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Question 2 Analysis: Investigating differential responses to dessication in four populations of *Drosophila mojavensis* by analyzing changes in cuticular hydrocarbon (CHC) composition.
+
+We set out to determine whether **population origin**, **host plant**, or **desiccation exposure time**, will result in differential stress responses in *D. mojavensis*. We will analyze our data by performing a principal component analysis and then plotting the most influential components, relative to the three mentioned variables. This will allow us to conclude whether the selected variables yield differential responses and which variables displayed more significant separation of the CHC content values.
+
+Before inputting the data, a unix script was performed to change the csv. The original dataset has 'F' indicating a female *D. mojavensis*. When inputting the dataset into R, these were switched to 'FALSE.' Thus, we used unix and regular expressions to alter this dataset before it was inputted:
+
+$ cd Users/yourname/path/to/csv/file
+$ sed 's/^\([^,]*,[^,]*,\)F\([^,]*,\)/\1female\2/' chcData.csv > chcData1.csv
+
+This unix script changes the csv (original: "chcData.csv") and saves it under a new filed named "chcData1.csv." All subsequent analyses will be done using the edited dataframe.
+
+# Formatting Dataset
+
+Inputting dataset and importing necessary packages:
+
+```{r}
+
+library(ggplot2)
+
+library(gridExtra)
+
+library(dplyr)
+
+library(cowplot)
+
+theme_set(theme_classic())
+
+CHC <- read.csv("chcData1.csv")
+
+```
+
+ 
+Checking data for any errors:
+
+```{r}
+
+dim(CHC)
+
+```
+
+```{r}
+
+head(CHC)
+
+```
+
+```{r}
+
+tail(CHC)
+
+```
+
+```{r}
+
+summary(CHC)
+
+```
+
+```{r}
+
+str(CHC)
+
+```
+
+There were some issues with inputting the raw data into R. Major points of concern:
+- Row 117 does not have a sample name and many NAs, so going to drop that row
+- Extra rows were added into the edges of the data frame
+
+```{r}
+
+CHC1 <- CHC %>%
+
+  select(-c(starts_with("X"), pop, sex, cactus, exposure, SAMPLE)) %>% #Removing additional columns, deleting unecessary categorical data
+
+  na.omit() %>% #Omitting bottom row with no data
+
+  mutate_at('C.37.br.alkene', as.numeric) %>% #Making column numeric rather than a character
+
+   mutate_all(~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) #Removing any NAs introduced by character -> numeric
+
+```
+
+```{r}
+
+tail(CHC1)
+
+```
+
+```{r}
+
+dim(CHC1)
+
+```
+
+```{r}
+
+sum(is.na(CHC1$C.37.br.alkene)) #Checking to see how many NAs are left in our dataframe:
+
+```
+
+Checking the normality of the dataset:
+
+```{r}
+# loop through each column in the dataframe
+for (col in 1:ncol(CHC1)) {
+  # calculate the kurtosis using the kurtosis function from the moments package
+  kurt <- moments::kurtosis(CHC1[, col])
+  
+  # check if kurtosis falls between 2 and 4
+  if (kurt > 1.5 & kurt < 5) {
+    print(paste("Column", col, "is normal"))
+  } else {
+    print(paste("Column", col, "is not normal"))
+  }
+}
+```
+```{r}
+# loop through each column in the dataframe
+for (col in 1:ncol(CHC1)) {
+  # calculate the kurtosis 
+  skew <- moments::skewness(CHC1[, col])
+  
+  # check if kurtosis falls between 2 and 4
+  if (kurt > 1.5 & kurt < 5) {
+    print(paste("Column", col, "is normal"))
+  } else {
+    print(paste("Column", col, "is not normal"))
+  }
+}
+```
+
+Based on the kurtosis and skewness of each of the columns within our dataframe, columns 5 and 28 are points of concern within our dataframe do not fit a normal distribution as well. This dataset represents changes in expression of a variety of hydrocarbons and thus, biologically, it makes sense for it not to be normally distributed. We scale the data using z-scores to run our PCA and are therefore making the assumption that this will reduce the impacts of any non-normal data.
+
+Correlation table:
+
+```{r}
+
+round(cor(CHC1),3)
+
+```
+
+ 
+
+# Principal Component Analysis
+
+Scaling the data using standards (z-scores).
+
+```{r}
+
+CHC1 <- apply(CHC1, 2,  function(x) (x - mean(x)) / sd(x)) # Applying the scaling function to each column in the dataframe
+
+```
+
+```{r}
+
+CHCPCA <- princomp(CHC1,cor = F)
+
+```
+
+
+Examining the structure of the PCA analysis:
+
+```{r}
+
+str(CHCPCA)
+
+```
+
+```{r}
+
+summary(CHCPCA)
+
+```
+
+Removing NA row from CHC so we can bind the data (same as CHCDataFixing.R code chunk above):
+
+```{r}
+
+CHC <- CHC %>%
+
+  select(-c(starts_with("X"))) %>%
+
+  na.omit()
+
+head(CHC)
+
+```
+
+```{r}
+
+CHCDat<-cbind(CHC,CHCPCA$scores)
+
+head(CHCDat)
+
+```
+
+
+PC Loadings: Eigenvalues (Representation of variation explained by each PC)
+
+```{r}
+
+PCloadings <- data.frame(Component=c(1:30),Eigenvalue=CHCPCA$sdev^2)
+
+ggplot(aes(x=Component,y=Eigenvalue),data=PCloadings) + geom_point() + geom_line()
+
+```
+
+**Fig. 1.** Scree Plot: Eigenvalues (PC loadings) associated with each of the 30 principal components.  
+
+
+Since PC 1-4 represent the most variation of the 30 components, we will focus on these 4 components in our analysis. 
+
+
+Renaming the columns for figure formatting:
+
+```{r}
+
+CHCDat <- CHCDat %>% rename(Population = pop) %>% rename(Cactus = cactus) %>% rename(Exposure = exposure)
+
+# Changing exposure time to a factor for colour visualization
+
+CHCDat <- CHCDat %>% mutate(Exposure=as.factor(Exposure))
+```
+
+
+Comparing the bivariate plots relative to **population origin**: 
+
+```{r}
+p1_2 <- ggplot(aes(x=Comp.2,y=Comp.1, colour=Population), data=CHCDat) + geom_point() + ylab("PC 1") + xlab("PC 2") + theme(legend.position = "none")
+
+p1_3 <- ggplot(aes(x=Comp.3,y=Comp.1, colour=Population), data=CHCDat) + geom_point() + ylab("PC 1") + xlab("PC 3") + theme(legend.position = "none")
+
+p1_4 <- ggplot(aes(x=Comp.4,y=Comp.1, colour=Population), data=CHCDat) + geom_point() + ylab("PC 1") + xlab("PC 4") + theme(legend.position = "none")
+
+p2_3 <- ggplot(aes(x=Comp.3,y=Comp.2, colour=Population), data=CHCDat) + geom_point() + ylab("PC 2") + xlab("PC 3") + theme(legend.position = "none")
+
+p2_4 <- ggplot(aes(x=Comp.4,y=Comp.2, colour=Population), data=CHCDat) + geom_point() + ylab("PC 2") + xlab("PC 4") + theme(legend.position = "none")
+
+p3_4 <- ggplot(aes(x=Comp.4,y=Comp.3, colour=Population), data=CHCDat) + geom_point() + ylab("PC 3") + xlab("PC 4") + theme(legend.position = "none")
+
+PCPlot_Pop <- grid.arrange(p1_2, p1_3, p1_4, p2_3, p2_4, p3_4, nrow=2)
+
+```
+
+**Fig. 2.** All possible combinations of principle components 1-4 with points coloured by population origin (red = OPNM, green = PO, blue = PP, purple = SQ).
+
+
+Some separation of values relative to population origin of *D. mojavensis* is evident, with PC 1 and PC 2 displaying the most significant grouping. The visualization (Fig. 2) further depicts that CHC composition loads heavily on PC1 and PC 2, which we can also conclude from the scree plot (Fig. 1). This indicates that reaction to desiccation stress measured by change in CHC composition can be differentiated between *D. mojavensis* most effectively on the basis of population origin.
+
+
+Comparing the bivariate plots relative to **host plant**: 
+
+```{r}
+c1_2 <- ggplot(aes(x=Comp.2,y=Comp.1, colour=Cactus), data=CHCDat) + geom_point() + ylab("PC 1") + xlab("PC 2") + theme(legend.position = "none")
+
+c1_3 <- ggplot(aes(x=Comp.3,y=Comp.1, colour=Cactus), data=CHCDat) + geom_point() + ylab("PC 1") + xlab("PC 3") + theme(legend.position = "none")
+
+c1_4 <- ggplot(aes(x=Comp.4,y=Comp.1, colour=Cactus), data=CHCDat) + geom_point() + ylab("PC 1") + xlab("PC 4") + theme(legend.position = "none")
+
+c2_3 <- ggplot(aes(x=Comp.3,y=Comp.2, colour=Cactus), data=CHCDat) + geom_point() + ylab("PC 2") + xlab("PC 3") + theme(legend.position = "none")
+
+c2_4 <- ggplot(aes(x=Comp.4,y=Comp.2, colour=Cactus), data=CHCDat) + geom_point() + ylab("PC 2") + xlab("PC 4") + theme(legend.position = "none")
+
+c3_4 <- ggplot(aes(x=Comp.4,y=Comp.3, colour=Cactus), data=CHCDat) + geom_point() + ylab("PC 3") + xlab("PC 4") + theme(legend.position = "none")
+
+PCPlot_Cac <- grid.arrange(c1_2, c1_3, c1_4, c2_3, c2_4, c3_4, nrow=2)
+
+```
+
+**Fig. 3.** All possible combinations of principle components 1-4 with points coloured by host plant (red = AG, blue = OP).
+
+
+No significant separation of values is observed relative to host plant. 
+
+
+Comparing the bivariate plots relative to desiccation **exposure time**: 
+
+```{r}
+e1_2 <- ggplot(aes(x=Comp.2,y=Comp.1, colour=Exposure), data=CHCDat) + geom_point() + ylab("PC 1") + xlab("PC 2") + theme(legend.position = "none")
+
+e1_3 <- ggplot(aes(x=Comp.3,y=Comp.1, colour=Exposure), data=CHCDat) + geom_point() + ylab("PC 1") + xlab("PC 3") + theme(legend.position = "none")
+
+e1_4 <- ggplot(aes(x=Comp.4,y=Comp.1, colour=Exposure), data=CHCDat) + geom_point() + ylab("PC 1") + xlab("PC 4") + theme(legend.position = "none")
+
+e2_3 <- ggplot(aes(x=Comp.3,y=Comp.2, colour=Exposure), data=CHCDat) + geom_point() + ylab("PC 2") + xlab("PC 3") + theme(legend.position = "none")
+
+e2_4 <- ggplot(aes(x=Comp.4,y=Comp.2, colour=Exposure), data=CHCDat) + geom_point() + ylab("PC 2") + xlab("PC 4") + theme(legend.position = "none")
+
+e3_4 <- ggplot(aes(x=Comp.4,y=Comp.3, colour=Exposure), data=CHCDat) + geom_point() + ylab("PC 3") + xlab("PC 4") + theme(legend.position = "none")
+
+PCPlot_Exp <- grid.arrange(e1_2, e1_3, e1_4, e2_3, e2_4, e3_4, nrow=2)
+
+```
+
+**Fig. 4.** All possible combinations of principle components 1-4 with points coloured by exposure time length in hours (red = 0 h, green = 9 h, blue = 18 h). 
+
+
+No significant separation of values is observed relative to desiccation exposure time.
