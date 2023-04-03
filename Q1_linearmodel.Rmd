@@ -129,3 +129,41 @@ qplot(x=residuals(full_model))
 ```
 
 The residuals are fairly normally distributed, meeting assumptions of normality. 
+
+
+In agreement with the AIC, the only factor that has a significant effect on egg viability is the population of origin.
+
+## QA/QC
+```{r}
+qplot(x=residuals(full_model))
+```
+
+The residuals are fairly normally distributed, meeting assumptions of normality. 
+
+## Figure
+
+We'll plot viability responses based on each of the individual factors.
+
+```{r}
+ggplot(via_dat, aes(x=Cactus, y=viability, colour=Cactus)) + 
+  geom_boxplot() +
+  xlab("Viability") +
+  ylab("Host cactus")
+```
+
+
+```{r}
+ggplot(via_dat, aes(x=Population, y=viability, colour=Population)) + 
+  geom_boxplot() +
+  xlab("Population of origin") +
+  ylab("Viability")
+```
+
+```{r}
+ggplot(via_dat, aes(x=sex_bias, y=viability)) + 
+  geom_smooth(method="lm") +
+  geom_point() +
+  xlab("Proportion of males") +
+  ylab("Viability")
+```
+
